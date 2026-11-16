@@ -158,19 +158,19 @@ for item in "${FONT_ITEMS[@]}"; do
 done
 
 # Patch fonts.conf so Panorama uses Vazirmatn for Arabic-script (Persian) UI
-# text. Deadlock remaps fonts per-language in this same file, so we add a
-# matching rule before </fontconfig>. Any earlier deadlock-persian rule block
-# is replaced so rule updates take effect on reinstall.
+# text. Two self-delimiting blocks are inserted: fontpattern entries right
+# after the game's own fontpattern list (the engine only loads font files
+# whose name matches a listed pattern), and family rules before
+# </fontconfig>. Any earlier deadlock-persian blocks are replaced first so
+# rule updates take effect on reinstall.
 patch_fonts_conf() {
     local conf="$1"
     [[ -f $conf && ! -L $conf ]] || return 0
     python3 - "$conf" <<'PY'
 import sys
 path = sys.argv[1]
-start = '<!-- deadlock-persian'
-end = '</fontconfig>'
-rule = (
-    '    <!-- deadlock-persian: Vazirmatn for Persian (Arabic-script) UI text -->\n'
+PATTERNS = (
+    '    <!-- deadlock-persian:fonts -->\n'
     '    <fontpattern>Vazirmatn</fontpattern>\n'
     '    <fontpattern>vazirmatn</fontpattern>\n'
     '    <fontpattern>Vazirmatn-Regular</fontpattern>\n'
@@ -179,6 +179,10 @@ rule = (
     '    <fontpattern>vazirmatn-bold</fontpattern>\n'
     '    <fontpattern>Vazirmatn-Regular.ttf</fontpattern>\n'
     '    <fontpattern>Vazirmatn-Bold.ttf</fontpattern>\n'
+    '    <!-- /deadlock-persian:fonts -->'
+)
+RULES = (
+    '    <!-- deadlock-persian:rules -->\n'
     '    <match>\n'
     '        <edit name="family" mode="append">\n'
     '            <string>Vazirmatn</string>\n'
@@ -192,18 +196,38 @@ rule = (
     '            <string>Vazirmatn</string>\n'
     '        </edit>\n'
     '    </match>\n'
+    '    <!-- /deadlock-persian:rules -->\n'
 )
-with open(path, 'r', encoding='utf-8') as f:
+
+def strip_regions(data):
+    for start, end in (('<!-- deadlock-persian:fonts -->', '<!-- /deadlock-persian:fonts -->'),
+                       ('<!-- deadlock-persian:rules -->', '<!-- /deadlock-persian:rules -->')):
+        while True:
+            i = data.find(start)
+            if i < 0:
+                break
+            j = data.find(end, i)
+            if j < 0:
+                break
+            data = data[:i] + data[j + len(end):]
+    # Legacy single-block format: marker directly before </fontconfig>.
+    i = data.find('<!-- deadlock-persian')
+    j = data.rfind('</fontconfig>')
+    if i >= 0 and j > i:
+        data = data[:i] + data[j:]
+    return data
+
+with open(path, encoding='utf-8') as f:
     data = f.read()
-# Remove any earlier rule block (inserted just before </fontconfig>).
-i = data.find(start)
-j = data.rfind(end)
-if i >= 0 and j > i:
-    data = data[:i] + data[j:]
-idx = data.rfind(end)
+data = strip_regions(data)
+p = data.rfind('</fontpattern>')
+if p >= 0:
+    p += len('</fontpattern>')
+    data = data[:p] + '\n' + PATTERNS + data[p:]
+idx = data.rfind('</fontconfig>')
 if idx < 0:
     raise SystemExit('fonts.conf: </fontconfig> not found; not patching')
-data = data[:idx] + rule + data[idx:]
+data = data[:idx] + RULES + data[idx:]
 with open(path, 'w', encoding='utf-8') as f:
     f.write(data)
 PY

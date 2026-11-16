@@ -23,10 +23,12 @@ LEGACY_CORE_FONTS = Path('core/panorama/fonts')
 BACKUP = '.deadlock-persian-backup'
 LOCK = '.deadlock-persian.lock'
 PATCH_MARKER = 'deadlock-persian'
-PATCH_START = '<!-- deadlock-persian'
-PATCH_END = '</fontconfig>'
-PATCH_RULE = (
-    '    <!-- deadlock-persian: Vazirmatn for Persian (Arabic-script) UI text -->\n'
+PATCH_BLOCKS = (
+    ('<!-- deadlock-persian:fonts -->', '<!-- /deadlock-persian:fonts -->'),
+    ('<!-- deadlock-persian:rules -->', '<!-- /deadlock-persian:rules -->'),
+)
+PATCH_PATTERNS = (
+    '    <!-- deadlock-persian:fonts -->\n'
     '    <fontpattern>Vazirmatn</fontpattern>\n'
     '    <fontpattern>vazirmatn</fontpattern>\n'
     '    <fontpattern>Vazirmatn-Regular</fontpattern>\n'
@@ -35,6 +37,10 @@ PATCH_RULE = (
     '    <fontpattern>vazirmatn-bold</fontpattern>\n'
     '    <fontpattern>Vazirmatn-Regular.ttf</fontpattern>\n'
     '    <fontpattern>Vazirmatn-Bold.ttf</fontpattern>\n'
+    '    <!-- /deadlock-persian:fonts -->'
+)
+PATCH_RULE = (
+    '    <!-- deadlock-persian:rules -->\n'
     '    <match>\n'
     '        <edit name="family" mode="append">\n'
     '            <string>Vazirmatn</string>\n'
@@ -48,6 +54,7 @@ PATCH_RULE = (
     '            <string>Vazirmatn</string>\n'
     '        </edit>\n'
     '    </match>\n'
+    '    <!-- /deadlock-persian:rules -->\n'
 )
 FONT_DIRS = (FONTS, CORE_FONTS)
 
@@ -182,34 +189,50 @@ def font_dest_rel(rel):
     return Path(rel)
 
 
-def patch_fonts_conf(conf):
-    """Insert the Vazirmatn rule before </fontconfig>, replacing any earlier
-    deadlock-persian rule block so rule updates take effect on reinstall."""
-    if not conf.is_file() or conf.is_symlink():
-        return
-    data = conf.read_text(encoding='utf-8')
-    i = data.find(PATCH_START)
-    j = data.rfind(PATCH_END)
+def strip_font_regions(data):
+    for start, end in PATCH_BLOCKS:
+        while True:
+            i = data.find(start)
+            if i < 0:
+                break
+            j = data.find(end, i)
+            if j < 0:
+                break
+            data = data[:i] + data[j + len(end):]
+    # Legacy single-block format: marker directly before </fontconfig>.
+    i = data.find('<!-- deadlock-persian')
+    j = data.rfind('</fontconfig>')
     if i >= 0 and j > i:
         data = data[:i] + data[j:]
-    idx = data.rfind(PATCH_END)
+    return data
+
+
+def patch_fonts_conf(conf):
+    """Insert the Vazirmatn fontpattern whitelist and family rules, replacing
+    any earlier deadlock-persian blocks so updates take effect on reinstall.
+    Patterns go right after the game's own fontpattern list; rules go before
+    </fontconfig>."""
+    if not conf.is_file() or conf.is_symlink():
+        return
+    data = strip_font_regions(conf.read_text(encoding='utf-8'))
+    p = data.rfind('</fontpattern>')
+    if p >= 0:
+        p += len('</fontpattern>')
+        data = data[:p] + '\n' + PATCH_PATTERNS + data[p:]
+    idx = data.rfind('</fontconfig>')
     if idx < 0:
-        raise ValueError(f'{conf}: {PATCH_END} not found; not patching')
+        raise ValueError(f'{conf}: </fontconfig> not found; not patching')
     conf.write_text(data[:idx] + PATCH_RULE + data[idx:], encoding='utf-8')
 
 
 def unpatch_fonts_conf(conf):
-    """Remove our rule from fonts.conf (leaves the rest of the file untouched)."""
+    """Remove our blocks from fonts.conf (leaves the rest untouched)."""
     if not conf.is_file():
         return
     data = conf.read_text(encoding='utf-8')
-    i = data.find(PATCH_START)
-    if i < 0:
-        return
-    j = data.rfind(PATCH_END)
-    if j < 0 or j < i:
-        return
-    conf.write_text(data[:i] + data[j:], encoding='utf-8')
+    stripped = strip_font_regions(data)
+    if stripped != data:
+        conf.write_text(stripped, encoding='utf-8')
 
 
 def install(game):

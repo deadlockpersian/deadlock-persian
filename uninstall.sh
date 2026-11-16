@@ -101,17 +101,23 @@ if [[ -f "$BACKUP/fonts.conf.patched" && -s "$BACKUP/fonts.conf.patched" ]]; the
         python3 - "$conf" <<'PY'
 import sys
 path = sys.argv[1]
-start = '<!-- deadlock-persian'
-end = '</fontconfig>'
 with open(path, encoding='utf-8') as f:
     data = f.read()
-i = data.find(start)
-if i < 0:
-    raise SystemExit(0)
-j = data.rfind(end)
-if j < 0 or j < i:
-    raise SystemExit(0)
-data = data[:i] + data[j:]
+for start, end in (('<!-- deadlock-persian:fonts -->', '<!-- /deadlock-persian:fonts -->'),
+                   ('<!-- deadlock-persian:rules -->', '<!-- /deadlock-persian:rules -->')):
+    while True:
+        i = data.find(start)
+        if i < 0:
+            break
+        j = data.find(end, i)
+        if j < 0:
+            break
+        data = data[:i] + data[j + len(end):]
+# Legacy single-block format: marker directly before </fontconfig>.
+i = data.find('<!-- deadlock-persian')
+j = data.rfind('</fontconfig>')
+if i >= 0 and j > i:
+    data = data[:i] + data[j:]
 with open(path, 'w', encoding='utf-8') as f:
     f.write(data)
 PY
