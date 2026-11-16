@@ -157,7 +157,7 @@ for item in "${FONT_ITEMS[@]}"; do
     done < <(find "$STAGE_FONTS" -type f | sort)
 done
 
-# Patch fonts.conf so Panorama uses Vazirmatn for Arabic-script (Persian) UI
+# Patch fonts.conf so Panorama uses Vazirmatn for Persian (Arabic-script) UI
 # text. Two self-delimiting blocks are inserted: fontpattern entries right
 # after the game's own fontpattern list (the engine only loads font files
 # whose name matches a listed pattern), and family rules before
@@ -181,23 +181,35 @@ PATTERNS = (
     '    <fontpattern>Vazirmatn-Bold.ttf</fontpattern>\n'
     '    <!-- /deadlock-persian:fonts -->'
 )
-RULES = (
-    '    <!-- deadlock-persian:rules -->\n'
-    '    <match>\n'
-    '        <edit name="family" mode="append">\n'
-    '            <string>Vazirmatn</string>\n'
-    '        </edit>\n'
+# The game's text font families. Matching requests get Vazirmatn prepended
+# with strong binding so it wins the family match — the same mechanism the
+# proven 42-repl-global.conf font mods for CS2/Dota/Deadlock use. Marlett and
+# *.uifont symbol fonts are intentionally left alone.
+FAMILIES = ['Radiance', 'Reaver', 'Valve', 'Jost', 'Hahmlet', 'Hans',
+            'RocknRoll', 'Tetsubin', 'Retail', 'Hypatia', 'Noto',
+            'Arial', 'Tahoma', 'Verdana', 'DejaVu', 'Liberation',
+            'Courier', 'Lucida', 'Gulim', 'MingLiU']
+rule_parts = [
+    '    <!-- deadlock-persian:rules -->\n',
+    '    <!-- Vazirmatn replaces the game text fonts (42-repl-global style). -->\n',
+]
+for fam in FAMILIES:
+    rule_parts.append(
+        '    <match target="pattern">\n'
+        f'        <test name="family" compare="contains" qual="any"><string>{fam}</string></test>\n'
+        '        <edit name="family" mode="prepend" binding="strong"><string>Vazirmatn</string></edit>\n'
+        '    </match>\n')
+rule_parts.append(
+    '    <match target="pattern">\n'
+    '        <test qual="any" name="charset" compare="contains"><string>Arabic</string></test>\n'
+    '        <edit name="family" mode="prepend" binding="strong"><string>Vazirmatn</string></edit>\n'
+    '    </match>\n')
+rule_parts.append(
+    '    <match target="pattern">\n'
+    '        <edit name="family" mode="append"><string>Vazirmatn</string></edit>\n'
     '    </match>\n'
-    '    <match>\n'
-    '        <test qual="any" name="charset" compare="contains">\n'
-    '            <string>Arabic</string>\n'
-    '        </test>\n'
-    '        <edit name="family" mode="prepend" binding="strong">\n'
-    '            <string>Vazirmatn</string>\n'
-    '        </edit>\n'
-    '    </match>\n'
-    '    <!-- /deadlock-persian:rules -->\n'
-)
+    '    <!-- /deadlock-persian:rules -->\n')
+RULES = ''.join(rule_parts)
 
 def strip_regions(data):
     for start, end in (('<!-- deadlock-persian:fonts -->', '<!-- /deadlock-persian:fonts -->'),

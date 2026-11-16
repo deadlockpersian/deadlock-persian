@@ -39,20 +39,29 @@ PATCH_PATTERNS = (
     '    <fontpattern>Vazirmatn-Bold.ttf</fontpattern>\n'
     '    <!-- /deadlock-persian:fonts -->'
 )
+# The game's text font families. Matching requests get Vazirmatn prepended
+# with strong binding so it wins the family match — the same mechanism the
+# proven 42-repl-global.conf font mods for CS2/Dota/Deadlock use. Marlett and
+# *.uifont symbol fonts are intentionally left alone.
+REPLACED_FAMILIES = ('Radiance', 'Reaver', 'Valve', 'Jost', 'Hahmlet', 'Hans',
+                     'RocknRoll', 'Tetsubin', 'Retail', 'Hypatia', 'Noto',
+                     'Arial', 'Tahoma', 'Verdana', 'DejaVu', 'Liberation',
+                     'Courier', 'Lucida', 'Gulim', 'MingLiU')
 PATCH_RULE = (
     '    <!-- deadlock-persian:rules -->\n'
-    '    <match>\n'
-    '        <edit name="family" mode="append">\n'
-    '            <string>Vazirmatn</string>\n'
-    '        </edit>\n'
+    '    <!-- Vazirmatn replaces the game text fonts (42-repl-global style). -->\n'
+    + ''.join(
+        '    <match target="pattern">\n'
+        f'        <test name="family" compare="contains" qual="any"><string>{fam}</string></test>\n'
+        '        <edit name="family" mode="prepend" binding="strong"><string>Vazirmatn</string></edit>\n'
+        '    </match>\n'
+        for fam in REPLACED_FAMILIES)
+    + '    <match target="pattern">\n'
+    '        <test qual="any" name="charset" compare="contains"><string>Arabic</string></test>\n'
+    '        <edit name="family" mode="prepend" binding="strong"><string>Vazirmatn</string></edit>\n'
     '    </match>\n'
-    '    <match>\n'
-    '        <test qual="any" name="charset" compare="contains">\n'
-    '            <string>Arabic</string>\n'
-    '        </test>\n'
-    '        <edit name="family" mode="prepend" binding="strong">\n'
-    '            <string>Vazirmatn</string>\n'
-    '        </edit>\n'
+    '    <match target="pattern">\n'
+    '        <edit name="family" mode="append"><string>Vazirmatn</string></edit>\n'
     '    </match>\n'
     '    <!-- /deadlock-persian:rules -->\n'
 )
