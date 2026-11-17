@@ -39,18 +39,26 @@ PATCH_PATTERNS = (
     '    <fontpattern>Vazirmatn-Bold.ttf</fontpattern>\n'
     '    <!-- /deadlock-persian:fonts -->'
 )
-# The game's text font families. Matching requests get Vazirmatn prepended
-# with strong binding so it wins the family match — the same mechanism the
-# proven 42-repl-global.conf font mods for CS2/Dota/Deadlock use. Marlett and
-# *.uifont symbol fonts are intentionally left alone.
-REPLACED_FAMILIES = ('Radiance', 'Reaver', 'Valve', 'Jost', 'Hahmlet', 'Hans',
-                     'RocknRoll', 'Tetsubin', 'Retail', 'Hypatia', 'Noto',
-                     'Arial', 'Tahoma', 'Verdana', 'DejaVu', 'Liberation',
-                     'Courier', 'Lucida', 'Gulim', 'MingLiU')
+# The game's text font families, matched by substring (the game's own family
+# names are quirky: "BlackHanSans", "07TetsubinGothic", "notosans", ...).
+# Each gets the proven 42-repl-global.conf pair: target="font" reassigns the
+# family in the font cache, target="pattern" prepends Vazirmatn with strong
+# binding so it wins the family match. Marlett and *.uifont symbol fonts are
+# intentionally left alone.
+REPLACED_FAMILIES = ('Radiance', 'Reaver', 'Oracle', 'Pulp', 'Jost', 'Hahmlet',
+                     'HanSans', 'Rockn', 'Tetsubin', 'Retail', 'Hypatia', 'Noto',
+                     'noto', 'Creepster', 'Rajdhani', 'Quantico', 'VT323', 'Raju',
+                     'avenhook', 'Early', 'roadcast', 'Market', 'Unifraktur',
+                     'Grenze', 'Bangers', 'DIN', 'Arial', 'Tahoma', 'Verdana',
+                     'DejaVu', 'Liberation', 'Courier', 'Lucida', 'Gulim', 'MingLiU')
 PATCH_RULE = (
     '    <!-- deadlock-persian:rules -->\n'
     '    <!-- Vazirmatn replaces the game text fonts (42-repl-global style). -->\n'
     + ''.join(
+        '    <match target="font">\n'
+        f'        <test name="family" compare="contains" qual="any"><string>{fam}</string></test>\n'
+        '        <edit name="family" mode="assign"><string>Vazirmatn</string></edit>\n'
+        '    </match>\n'
         '    <match target="pattern">\n'
         f'        <test name="family" compare="contains" qual="any"><string>{fam}</string></test>\n'
         '        <edit name="family" mode="prepend" binding="strong"><string>Vazirmatn</string></edit>\n'
@@ -74,6 +82,15 @@ def file_hash(path):
         for chunk in iter(lambda: f.read(1024 * 1024), b''):
             h.update(chunk)
     return h.hexdigest()
+
+
+def clear_fontconfig_cache():
+    # The engine caches scanned fonts; clear it so changes take effect on the
+    # next start (the CS2FontStudio tool does this after every font change).
+    for base in (os.environ.get('TEMP'), os.environ.get('TMP'),
+                 os.path.expanduser('~/.cache'), '/tmp'):
+        if base:
+            shutil.rmtree(os.path.join(base, 'fontconfig'), ignore_errors=True)
 
 
 def validate_game(path):
@@ -331,6 +348,7 @@ def install(game):
             if conf.is_file() and PATCH_MARKER in conf.read_text(encoding='utf-8'):
                 patched.append((dir_rel / 'fonts.conf').as_posix() + '\n')
         (backup / 'fonts.conf.patched').write_text(''.join(patched), encoding='ascii')
+    clear_fontconfig_cache()
     print(f'Installed translation in: {game}\nOriginal files backed up in: {backup}')
     print('Menu translation is incomplete and has not been tested in game.')
     print('Restart Deadlock for the Vazirmatn font to take effect.')
@@ -393,6 +411,7 @@ def uninstall(game, force):
                     unpatch_fonts_conf(game / line.strip())
         cleanup_legacy_core(game)
     shutil.rmtree(backup)
+    clear_fontconfig_cache()
     print(f'Translation removed; original files restored: {game}')
 
 

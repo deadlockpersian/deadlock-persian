@@ -181,20 +181,28 @@ PATTERNS = (
     '    <fontpattern>Vazirmatn-Bold.ttf</fontpattern>\n'
     '    <!-- /deadlock-persian:fonts -->'
 )
-# The game's text font families. Matching requests get Vazirmatn prepended
-# with strong binding so it wins the family match — the same mechanism the
-# proven 42-repl-global.conf font mods for CS2/Dota/Deadlock use. Marlett and
-# *.uifont symbol fonts are intentionally left alone.
-FAMILIES = ['Radiance', 'Reaver', 'Valve', 'Jost', 'Hahmlet', 'Hans',
-            'RocknRoll', 'Tetsubin', 'Retail', 'Hypatia', 'Noto',
-            'Arial', 'Tahoma', 'Verdana', 'DejaVu', 'Liberation',
-            'Courier', 'Lucida', 'Gulim', 'MingLiU']
+# The game's text font families, matched by substring (the game's own family
+# names are quirky: "BlackHanSans", "07TetsubinGothic", "notosans", ...).
+# Each gets the proven 42-repl-global.conf pair: target="font" reassigns the
+# family in the font cache, target="pattern" prepends Vazirmatn with strong
+# binding so it wins the family match. Marlett and *.uifont symbol fonts are
+# intentionally left alone.
+FAMILIES = ['Radiance', 'Reaver', 'Oracle', 'Pulp', 'Jost', 'Hahmlet',
+            'HanSans', 'Rockn', 'Tetsubin', 'Retail', 'Hypatia', 'Noto',
+            'noto', 'Creepster', 'Rajdhani', 'Quantico', 'VT323', 'Raju',
+            'avenhook', 'Early', 'roadcast', 'Market', 'Unifraktur',
+            'Grenze', 'Bangers', 'DIN', 'Arial', 'Tahoma', 'Verdana',
+            'DejaVu', 'Liberation', 'Courier', 'Lucida', 'Gulim', 'MingLiU']
 rule_parts = [
     '    <!-- deadlock-persian:rules -->\n',
     '    <!-- Vazirmatn replaces the game text fonts (42-repl-global style). -->\n',
 ]
 for fam in FAMILIES:
     rule_parts.append(
+        '    <match target="font">\n'
+        f'        <test name="family" compare="contains" qual="any"><string>{fam}</string></test>\n'
+        '        <edit name="family" mode="assign"><string>Vazirmatn</string></edit>\n'
+        '    </match>\n'
         '    <match target="pattern">\n'
         f'        <test name="family" compare="contains" qual="any"><string>{fam}</string></test>\n'
         '        <edit name="family" mode="prepend" binding="strong"><string>Vazirmatn</string></edit>\n'
@@ -259,6 +267,10 @@ done
     done
 } > "$STAGE/fonts.conf.patched"
 mv -f -- "$STAGE/fonts.conf.patched" "$BACKUP/fonts.conf.patched"
+
+# Clear the fontconfig cache so the engine rescans the fonts on next start
+# (the CS2FontStudio tool does this after every font change).
+rm -rf -- "${XDG_CACHE_HOME:-$HOME/.cache}/fontconfig" "${TMPDIR:-/tmp}/fontconfig" 2>/dev/null || true
 
 echo "Installed Persian translation in: $GAME"
 echo "Original files are backed up in: $BACKUP"

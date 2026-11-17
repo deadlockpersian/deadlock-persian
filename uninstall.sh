@@ -132,5 +132,7 @@ if [[ -d $wrong ]]; then
     find "$wrong" -mindepth 1 -type d -empty -delete 2>/dev/null || true
     rmdir -p -- "$wrong" 2>/dev/null || true
 fi
+# Clear the fontconfig cache so the engine rescans the fonts on next start.
+rm -rf -- "${XDG_CACHE_HOME:-$HOME/.cache}/fontconfig" "${TMPDIR:-/tmp}/fontconfig" 2>/dev/null || true
 rm -rf -- "$BACKUP"
 echo "Translation removed and original files restored: $GAME"
