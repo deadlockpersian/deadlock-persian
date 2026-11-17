@@ -13,6 +13,8 @@ done
 GAME=${GAME:-$DEFAULT_GAME}
 [[ -d $GAME ]] || { echo "Game directory not found: $GAME" >&2; exit 1; }
 GAME=$(cd -- "$GAME" && pwd -P)
+SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd -P)
+REPO=$SCRIPT_DIR
 MENU_REL='resource/localization/citadel_main/citadel_main_english.txt'
 VPK_REL='pak82_dir.vpk'
 FONTS_REL='panorama/fonts'
@@ -132,6 +134,57 @@ if [[ -d $wrong ]]; then
     find "$wrong" -mindepth 1 -type d -empty -delete 2>/dev/null || true
     rmdir -p -- "$wrong" 2>/dev/null || true
 fi
+# Restore the game's original font files over our replacements (skip any file
+# that changed externally after we replaced it).
+if [[ -f "$BACKUP/fonts.replaced" ]]; then
+python3 - "$GAME" "$BACKUP" <<'PYEOF'
+import hashlib, os, shutil, sys
+game, backup = (os.path.abspath(p) for p in sys.argv[1:3])
+manifest = os.path.join(backup, 'fonts.replaced')
+repl_dir = os.path.join(backup, 'replaced')
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+def rel_fs(rel):
+    return rel.replace('..', 'up').lstrip('/')
+
+restored = 0
+with open(manifest, encoding='utf-8') as f:
+    for line in f:
+        line = line.rstrip('\n')
+        if not line:
+            continue
+        rel, orig, new = line.split('\t')
+        path = os.path.join(game, rel)
+        saved = os.path.join(repl_dir, rel_fs(rel))
+        if os.path.isfile(saved) and os.path.isfile(path) and sha256(path) == new:
+            tmp = path + '.dp-tmp'
+            shutil.copyfile(saved, tmp)
+            os.replace(tmp, path)
+            restored += 1
+print('Restored %d game font file(s)' % restored)
+PYEOF
+fi
+# Remove the user-font-dir copies (only if they are still ours).
+python3 - "$REPO/data/fonts/vazirmatn" <<'PYEOF'
+import hashlib, os, sys
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b''):
+            h.update(chunk)
+    return h.hexdigest()
+src = os.path.abspath(sys.argv[1])
+for name in ('Vazirmatn-Regular.ttf', 'Vazirmatn-Bold.ttf'):
+    dest = os.path.expanduser(os.path.join('~/.fonts', name))
+    if os.path.isfile(dest) and sha256(dest) == sha256(os.path.join(src, name)):
+        os.remove(dest)
+PYEOF
 # Clear the fontconfig cache so the engine rescans the fonts on next start.
 rm -rf -- "${XDG_CACHE_HOME:-$HOME/.cache}/fontconfig" "${TMPDIR:-/tmp}/fontconfig" 2>/dev/null || true
 rm -rf -- "$BACKUP"

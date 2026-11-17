@@ -93,6 +93,78 @@ def clear_fontconfig_cache():
             shutil.rmtree(os.path.join(base, 'fontconfig'), ignore_errors=True)
 
 
+def _rel_fs(rel):
+    return rel.replace('..', 'up').replace('\\', '/').lstrip('/')
+
+
+def replace_game_fonts(game, backup):
+    """Replace the game's own font files with renamed Vazirmatn copies: the
+    file replacement method confirmed working for Deadlock/CS2/Dota font mods
+    (rename the custom font to the original file name and paste it in). The
+    originals are backed up and restored on uninstall. Symbol fonts (Marlett,
+    *.uifont) and our own Vazirmatn copies stay untouched."""
+    if os.environ.get('DEADLOCK_PERSIAN_NO_REPLACE') == '1':
+        return
+    manifest = backup / 'fonts.replaced'
+    repl_dir = backup / 'replaced'
+    repl_dir.mkdir(exist_ok=True)
+    done = set()
+    if manifest.is_file():
+        done = {line.split('\t', 1)[0]
+                for line in manifest.read_text(encoding='utf-8').splitlines() if line.strip()}
+    bold = ROOT / 'data/fonts/vazirmatn/Vazirmatn-Bold.ttf'
+    regular = ROOT / 'data/fonts/vazirmatn/Vazirmatn-Regular.ttf'
+    entries = []
+    for font_dir in (game / 'panorama' / 'fonts', game.parent / 'core' / 'panorama' / 'fonts'):
+        if not font_dir.is_dir():
+            continue
+        for path in sorted(font_dir.iterdir()):
+            low = path.name.lower()
+            if not low.endswith(('.ttf', '.otf', '.ttc')):
+                continue
+            if low.startswith('marlett') or 'vazirmatn' in low or not path.is_file():
+                continue
+            rel = os.path.relpath(str(path), str(game))
+            if rel in done:
+                continue
+            orig = file_hash(path)
+            dest = repl_dir / _rel_fs(rel)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, dest)
+            tmp = path.with_name(path.name + '.dp-tmp')
+            shutil.copyfile(bold if 'bold' in low else regular, tmp)
+            os.replace(tmp, path)
+            entries.append((rel, orig, file_hash(path)))
+            done.add(rel)
+    if entries:
+        with manifest.open('a', encoding='utf-8') as f:
+            for rel, orig, new in entries:
+                f.write(f'{rel}\t{orig}\t{new}\n')
+    print(f'Replaced {len(entries)} game font file(s) with Vazirmatn (originals backed up)')
+
+
+def restore_game_fonts(game, backup):
+    """Restore the game's original font files over our replacements (skips any
+    file that changed externally after we replaced it)."""
+    manifest = backup / 'fonts.replaced'
+    if not manifest.is_file():
+        return
+    repl_dir = backup / 'replaced'
+    restored = 0
+    for line in manifest.read_text(encoding='utf-8').splitlines():
+        if not line.strip():
+            continue
+        rel, orig, new = line.split('\t')
+        path = Path(os.path.join(str(game), rel))
+        saved = repl_dir / _rel_fs(rel)
+        if saved.is_file() and path.is_file() and file_hash(path) == new:
+            tmp = path.with_name(path.name + '.dp-tmp')
+            shutil.copyfile(saved, tmp)
+            os.replace(tmp, path)
+            restored += 1
+    print(f'Restored {restored} game font file(s)')
+
+
 def validate_game(path):
     path = path.expanduser().resolve()
     if not path.is_dir() or not any((path / p).is_file() for p in (MENU, VPK, Path('pak01_dir.vpk'))):
@@ -348,6 +420,7 @@ def install(game):
             if conf.is_file() and PATCH_MARKER in conf.read_text(encoding='utf-8'):
                 patched.append((dir_rel / 'fonts.conf').as_posix() + '\n')
         (backup / 'fonts.conf.patched').write_text(''.join(patched), encoding='ascii')
+    replace_game_fonts(game, backup)
     clear_fontconfig_cache()
     print(f'Installed translation in: {game}\nOriginal files backed up in: {backup}')
     print('Menu translation is incomplete and has not been tested in game.')
@@ -410,6 +483,7 @@ def uninstall(game, force):
                 if line.strip():
                     unpatch_fonts_conf(game / line.strip())
         cleanup_legacy_core(game)
+    restore_game_fonts(game, backup)
     shutil.rmtree(backup)
     clear_fontconfig_cache()
     print(f'Translation removed; original files restored: {game}')

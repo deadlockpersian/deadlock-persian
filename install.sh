@@ -268,6 +268,82 @@ done
 } > "$STAGE/fonts.conf.patched"
 mv -f -- "$STAGE/fonts.conf.patched" "$BACKUP/fonts.conf.patched"
 
+# Replace the game's own font files with renamed Vazirmatn copies: the file
+# replacement method confirmed working for Deadlock/CS2/Dota font mods (rename
+# the custom font to the original file name and paste it in). The originals are
+# backed up and restored by uninstall.sh. Symbol fonts (Marlett, *.uifont) and
+# our own Vazirmatn copies stay untouched. Set DEADLOCK_PERSIAN_NO_REPLACE=1
+# to skip this step.
+if [ -z "${DEADLOCK_PERSIAN_NO_REPLACE:-}" ]; then
+python3 - "$ROOT/data/fonts/vazirmatn" "$GAME" "$BACKUP" <<'PYEOF'
+import hashlib, os, shutil, sys
+src_dir, game, backup = (os.path.abspath(p) for p in sys.argv[1:4])
+manifest = os.path.join(backup, 'fonts.replaced')
+repl_dir = os.path.join(backup, 'replaced')
+os.makedirs(repl_dir, exist_ok=True)
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+def rel_fs(rel):
+    return rel.replace('..', 'up').lstrip('/')
+
+done = set()
+if os.path.exists(manifest):
+    with open(manifest, encoding='utf-8') as f:
+        done = {line.split('\t', 1)[0] for line in f if line.strip()}
+
+bold = os.path.join(src_dir, 'Vazirmatn-Bold.ttf')
+regular = os.path.join(src_dir, 'Vazirmatn-Regular.ttf')
+entries = []
+for font_dir in (os.path.join(game, 'panorama', 'fonts'),
+                 os.path.join(os.path.dirname(game), 'core', 'panorama', 'fonts')):
+    if not os.path.isdir(font_dir):
+        continue
+    for name in sorted(os.listdir(font_dir)):
+        low = name.lower()
+        if not low.endswith(('.ttf', '.otf', '.ttc')):
+            continue
+        if low.startswith('marlett') or 'vazirmatn' in low:
+            continue
+        path = os.path.join(font_dir, name)
+        if not os.path.isfile(path):
+            continue
+        rel = os.path.relpath(path, game)
+        if rel in done:
+            continue
+        orig = sha256(path)
+        dest = os.path.join(repl_dir, rel_fs(rel))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.copyfile(path, dest)
+        tmp = path + '.dp-tmp'
+        shutil.copyfile(bold if 'bold' in low else regular, tmp)
+        os.replace(tmp, path)
+        entries.append((rel, orig, sha256(path)))
+        done.add(rel)
+if entries:
+    with open(manifest, 'a', encoding='utf-8') as f:
+        for rel, orig, new in entries:
+            f.write('%s\t%s\t%s\n' % (rel, orig, new))
+print('Replaced %d game font file(s) with Vazirmatn (originals backed up)' % len(entries))
+PYEOF
+
+# Put Vazirmatn in the user font dir (~/.fonts is in the engine's scan list).
+python3 - "$ROOT/data/fonts/vazirmatn" <<'PYEOF'
+import os, shutil, sys
+src = os.path.abspath(sys.argv[1])
+dest = os.path.expanduser('~/.fonts')
+os.makedirs(dest, exist_ok=True)
+for name in ('Vazirmatn-Regular.ttf', 'Vazirmatn-Bold.ttf'):
+    shutil.copyfile(os.path.join(src, name), os.path.join(dest, name))
+print('Vazirmatn installed in ~/.fonts')
+PYEOF
+fi
+
 # Clear the fontconfig cache so the engine rescans the fonts on next start
 # (the CS2FontStudio tool does this after every font change).
 rm -rf -- "${XDG_CACHE_HOME:-$HOME/.cache}/fontconfig" "${TMPDIR:-/tmp}/fontconfig" 2>/dev/null || true
